@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Warrant of Decay</title>
+    
+    <!-- External Dependencies (CDNs) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <style>
+      body {
+        background-color: #050505;
+        color: #ffb000;
+        font-family: 'Share Tech Mono', monospace;
+        overflow: hidden; 
+      }
+      
+      /* CRT Scanline & Flicker */
+      .crt::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: linear-gradient(
+          to bottom,
+          rgba(18, 16, 16, 0) 50%,
+          rgba(0, 0, 0, 0.25) 50%
+        );
+        background-size: 100% 4px;
+        z-index: 50;
+        pointer-events: none;
+      }
+      
+      .crt::after {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: rgba(18, 16, 16, 0.1);
+        opacity: 0;
+        z-index: 50;
+        pointer-events: none;
+        animation: flicker 0.15s infinite;
+      }
+
+      @keyframes flicker {
+        0% { opacity: 0.02; }
+        50% { opacity: 0.05; }
+        100% { opacity: 0.02; }
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0f0f0f; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #451a03; 
+        border: 1px solid #92400e;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #78350f; 
+      }
+
+      /* Utility Classes */
+      .bg-grid {
+        background-size: 40px 40px;
+        background-image:
+          linear-gradient(to right, rgba(146, 64, 14, 0.05) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(146, 64, 14, 0.05) 1px, transparent 1px);
+      }
+      
+      .text-glow {
+        text-shadow: 0 0 5px rgba(255, 176, 0, 0.6);
+      }
+      
+      .tech-border {
+        position: relative;
+        border: 1px solid rgba(146, 64, 14, 0.3);
+        background: rgba(0, 0, 0, 0.4);
+      }
+      .tech-border::before {
+        content: '';
+        position: absolute;
+        top: -1px; left: -1px;
+        width: 8px; height: 8px;
+        border-top: 2px solid #d97706;
+        border-left: 2px solid #d97706;
+      }
+      .tech-border::after {
+        content: '';
+        position: absolute;
+        bottom: -1px; right: -1px;
+        width: 8px; height: 8px;
+        border-bottom: 2px solid #d97706;
+        border-right: 2px solid #d97706;
+      }
+
+      .tech-panel-header {
+        background: linear-gradient(90deg, rgba(146,64,14,0.1) 0%, rgba(0,0,0,0) 100%);
+        border-bottom: 1px solid rgba(146, 64, 14, 0.3);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root" class="w-full h-full"></div>
+
+    <script type="text/babel" data-presets="typescript,react">
+      /**
+       * WARRANT OF DECAY
+       * Single File Distribution
+       */
+
+      const { useState, useEffect, useRef, useCallback } = React;
+
+      // --- TYPES & ENUMS ---
+
+      enum PlanetType {
+        FORGE_WORLD = 'Forge World',
+        HIVE_WORLD = 'Hive World',
+        AGRI_WORLD = 'Agri-World',
+        DEATH_WORLD = 'Death World',
+        FRONTIER_OUTPOST = 'Frontier Outpost'
+      }
+
+      enum Commodity {
+        PROMETHIUM = 'Promethium',
+        FOOD = 'Corpse-Starch',
+        PARTS = 'Manufactorum Parts',
+        ARTIFACTS = 'Xenos Artifacts',
+        RELICS = 'Warp-Relics',
+        MEDICINE = 'Narthecium Supplies'
+      }
+
+      const COMMODITY_LIST = [
+        Commodity.PROMETHIUM,
+        Commodity.FOOD,
+        Commodity.PARTS,
+        Commodity.ARTIFACTS,
+        Commodity.RELICS,
+        Commodity.MEDICINE
+      ];
+
+      // --- CONSTANTS ---
+
+      const MAP_SIZE = 100;
+      const NODE_COUNT = 15;
+      const CONNECTION_DISTANCE = 35;
+
+      const INITIAL_HULL = 100;
+      const INITIAL_FUEL = 500;
+      const INITIAL_SUPPLIES = 50;
+      const INITIAL_PF = 1000;
+
+      const BASE_CARGO_CAPACITY = 250;
+      const CARGO_CAPACITY_PER_UPGRADE = 50;
+
+      const FUEL_COST_PER_UNIT = 1;
+      const SUPPLIES_COST_PER_UNIT = 0.5;
+
+      const CLEANSE_BASE_COST = 200; 
+      const CLEANSE_AMOUNT = 10;
+
+      const BASE_PRICES = {
+        [Commodity.PROMETHIUM]: 50,
+        [Commodity.FOOD]: 10,
+        [Commodity.PARTS]: 100,
+        [Commodity.ARTIFACTS]: 500,
+        [Commodity.RELICS]: 1000,
+        [Commodity.MEDICINE]: 75
+      };
+
+      const ECONOMY_MODIFIERS = {
+        [PlanetType.FORGE_WORLD]: {
+          [Commodity.PROMETHIUM]: [1.2, 1.2],
+          [Commodity.FOOD]: [1.5, 1.5],
+          [Commodity.PARTS]: [0.5, 0.6],
+          [Commodity.ARTIFACTS]: [1.5, 2.0],
+          [Commodity.RELICS]: [1.0, 1.0],
+          [Commodity.MEDICINE]: [1.2, 1.2]
+        },
+        [PlanetType.HIVE_WORLD]: {
+          [Commodity.PROMETHIUM]: [1.0, 1.0],
+          [Commodity.FOOD]: [2.0, 2.5],
+          [Commodity.PARTS]: [1.0, 1.0],
+          [Commodity.ARTIFACTS]: [0.8, 0.8],
+          [Commodity.RELICS]: [0.5, 0.5],
+          [Commodity.MEDICINE]: [1.5, 1.8] 
+        },
+        [PlanetType.AGRI_WORLD]: {
+          [Commodity.PROMETHIUM]: [1.2, 1.5],
+          [Commodity.FOOD]: [0.3, 0.4],
+          [Commodity.PARTS]: [1.5, 1.8],
+          [Commodity.ARTIFACTS]: [0.5, 0.5],
+          [Commodity.RELICS]: [0.5, 0.5],
+          [Commodity.MEDICINE]: [1.0, 1.0]
+        },
+        [PlanetType.DEATH_WORLD]: {
+          [Commodity.PROMETHIUM]: [2.0, 2.5],
+          [Commodity.FOOD]: [2.0, 2.0],
+          [Commodity.PARTS]: [2.0, 2.0],
+          [Commodity.ARTIFACTS]: [1.5, 1.5],
+          [Commodity.RELICS]: [0.5, 0.5],
+          [Commodity.MEDICINE]: [2.0, 3.0]
+        },
+        [PlanetType.FRONTIER_OUTPOST]: {
+          [Commodity.PROMETHIUM]: [0.8, 1.0],
+          [Commodity.FOOD]: [1.2, 1.2],
+          [Commodity.PARTS]: [1.3, 1.5],
+          [Commodity.ARTIFACTS]: [0.5, 0.5],
+          [Commodity.RELICS]: [1.5, 2.0],
+          [Commodity.MEDICINE]: [1.5, 1.5]
+        }
+      };
+
+      // --- GAME LOGIC ---
+
+      const uuid = () => Math.random().toString(36).substring(2, 9);
+      const distance = (a, b) => Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+
+      const FLAVOR_TEXTS = {
+        travel: [
+            "The Geller Field flickers. Shadows dance on the bridge.",
+            "Navigators report whispers in the warp. Morale holds, for now.",
+            "Engine spirits scream as we translate back to real-space.",
+            "Void-seals hiss. We have arrived.",
+            "The Astronomican's light was dim, but we endured.",
+            "Hull stress critical during translation. We stabilized at the last second.",
+            "The Astropathic choir is bleeding from their eyes. Transition complete.",
+            "We passed through a shoal of void-whales. Beautiful and terrifying.",
+            "Time dilation detected. We have arrived 3 days before we left.",
+            "The warp was calm, like a predator holding its breath."
+        ],
+        cleanse: [
+            "Tech-priests anoint the bulkheads with sacred oils.",
+            "The choir broadcasts hexagrammatic wards.",
+            "Mutants are purged from the lower decks. Order restored.",
+            "Incense clouds the bridge as the rites of banishment conclude.",
+            "Sacred texts are recited over the ship's intercom.",
+            "The Navigator has been sedated. The nightmare recedes."
+        ],
+        buy: [
+            "Acquisition authorized. Servitors loading cargo.",
+            "The local guilders accept our throne gelt.",
+            "Supplies secured. The Quartermaster is pleased.",
+            "Cargo bays filling. Heavy machinery active.",
+            "Trade writ verified. The goods are ours."
+        ],
+        sell: [
+            "Goods offloaded. The dynasty's coffers swell.",
+            "A lucrative contract fulfilled.",
+            "The planetary governor accepts our tithe.",
+            "Cargo jettisoned into local orbiters. Payment received.",
+            "Credits transferred. The deal is sealed."
+        ],
+        fail: [
+            "Transaction denied. Servitors stand down.",
+            "The Cogitator rejects the trade manifest.",
+            "Local customs refuse our authority.",
+            "Insufficient resources for this exchange."
+        ]
+      };
+
+      class MapSystem {
+        static generateMap() {
+            const nodes = {};
+            const planetNames = [
+            "Vraks Prime", "Golgotha", "Necromunda Secundus", "Catachan IV", "Badab",
+            "Cadia (Remnant)", "Armageddon", "Fenris System", "Baal", "Macragge",
+            "Medusa", "Nocturne", "Prospero's Ash", "Tallarn", "Tanith's Ghost"
+            ];
+            
+            const planetTypes = Object.values(PlanetType);
+
+            for (let i = 0; i < NODE_COUNT; i++) {
+                const id = uuid();
+                const type = planetTypes[Math.floor(Math.random() * planetTypes.length)];
+                
+                const planet = {
+                    id,
+                    name: planetNames[i] || `Sector ${id.toUpperCase()}`,
+                    type,
+                    coordinates: {
+                        x: Math.floor(Math.random() * MAP_SIZE),
+                        y: Math.floor(Math.random() * MAP_SIZE)
+                    },
+                    market: {},
+                    inventory: {},
+                    description: `A ${type.toLowerCase()} in the dark void.`
+                };
+
+                EconomyManager.refreshMarket(planet);
+
+                nodes[id] = {
+                    planet,
+                    visited: false,
+                    connections: []
+                };
+            }
+
+            const nodeIds = Object.keys(nodes);
+            
+            for (let i = 0; i < nodeIds.length; i++) {
+                for (let j = i + 1; j < nodeIds.length; j++) {
+                    const a = nodes[nodeIds[i]].planet.coordinates;
+                    const b = nodes[nodeIds[j]].planet.coordinates;
+                    if (distance(a, b) < CONNECTION_DISTANCE) {
+                        nodes[nodeIds[i]].connections.push(nodeIds[j]);
+                        nodes[nodeIds[j]].connections.push(nodeIds[i]);
+                    }
+                }
+            }
+
+            for (const id of nodeIds) {
+                if (nodes[id].connections.length === 0) {
+                    let closestId = "";
+                    let minDist = Infinity;
+                    for (const otherId of nodeIds) {
+                        if (id === otherId) continue;
+                        const dist = distance(nodes[id].planet.coordinates, nodes[otherId].planet.coordinates);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestId = otherId;
+                        }
+                    }
+                    if (closestId) {
+                        nodes[id].connections.push(closestId);
+                        nodes[closestId].connections.push(id);
+                    }
+                }
+            }
+            return nodes;
+        }
+      }
+
+      class EconomyManager {
+        static refreshMarket(planet) {
+            const modifiers = ECONOMY_MODIFIERS[planet.type];
+            COMMODITY_LIST.forEach(comm => {
+                const fluctuation = 0.8 + Math.random() * 0.4;
+                const buyMult = modifiers[comm][1]; 
+                planet.market[comm] = Math.floor(BASE_PRICES[comm] * buyMult * fluctuation);
+                planet.inventory[comm] = Math.floor(Math.random() * 50) + 10;
+            });
+        }
+
+        static getSellPrice(planet, commodity) {
+            const modifiers = ECONOMY_MODIFIERS[planet.type];
+            const sellMult = modifiers[commodity][0]; 
+            return Math.floor(planet.market[commodity] * (sellMult / modifiers[commodity][1]) * 0.8);
+        }
+      }
+
+      class GameEngine {
+        static createNewGame(legacyPoints, upgrades) {
+            const map = MapSystem.generateMap();
+            const startNodeId = Object.keys(map)[0];
+            
+            map[startNodeId].visited = true;
+
+            return {
+                ship: {
+                    hull: INITIAL_HULL + (upgrades.reinforcedProw * 20),
+                    maxHull: INITIAL_HULL + (upgrades.reinforcedProw * 20),
+                    fuel: INITIAL_FUEL,
+                    maxFuel: INITIAL_FUEL,
+                    supplies: INITIAL_SUPPLIES,
+                    morale: 100,
+                    corruption: 0,
+                    profitFactor: INITIAL_PF + (upgrades.tradeMandate * 200),
+                    cargo: {
+                        [Commodity.PROMETHIUM]: 0,
+                        [Commodity.FOOD]: 0,
+                        [Commodity.PARTS]: 0,
+                        [Commodity.ARTIFACTS]: 0,
+                        [Commodity.RELICS]: 0,
+                        [Commodity.MEDICINE]: 0
+                    },
+                    locationId: startNodeId,
+                    upgrades: upgrades
+                },
+                map,
+                logs: [{
+                    id: Date.now(),
+                    timestamp: "000.M42",
+                    message: "Warrant of Trade authenticated. Systems online. The void awaits.",
+                    type: 'neutral'
+                }],
+                turn: 1,
+                isGameOver: false,
+                legacyPoints
+            };
+        }
+
+        static travelTo(state, targetNodeId) {
+            const startNode = state.map[state.ship.locationId];
+            const endNode = state.map[targetNodeId];
+            
+            const dist = distance(startNode.planet.coordinates, endNode.planet.coordinates);
+            const fuelCost = Math.ceil(dist * FUEL_COST_PER_UNIT);
+            const supplyCost = Math.ceil(dist * SUPPLIES_COST_PER_UNIT);
+
+            if (state.ship.fuel < fuelCost) {
+                this.log(state, "Engines failed: Insufficient Promethium.", 'danger');
+                return { ...state };
+            }
+
+            const newState = structuredClone(state);
+            newState.ship.fuel -= fuelCost;
+            newState.ship.supplies = Math.max(0, newState.ship.supplies - supplyCost);
+            
+            if (newState.ship.supplies === 0) {
+                newState.ship.morale -= 10;
+                this.log(newState, "Crew starves. Mutinies suppressed violently.", 'danger');
+            }
+
+            this.handleWarpTravel(newState, dist);
+
+            newState.ship.locationId = targetNodeId;
+            newState.map[targetNodeId].visited = true;
+            newState.turn += 1;
+
+            const flavor = FLAVOR_TEXTS.travel[Math.floor(Math.random() * FLAVOR_TEXTS.travel.length)];
+            this.log(newState, flavor, 'neutral');
+
+            if (newState.ship.hull <= 0) {
+                newState.isGameOver = true;
+                newState.legacyPoints += Math.floor(newState.ship.profitFactor / 10);
+                this.log(newState, "HULL BREACH CRITICAL. VESSEL LOST.", 'danger');
+            }
+            
+            if (newState.ship.corruption >= 100) {
+                newState.isGameOver = true;
+                newState.legacyPoints += Math.floor(newState.ship.profitFactor / 20);
+                this.log(newState, "THE GELLER FIELD COLLAPSES. WE ARE LOST.", 'warp');
+            }
+
+            return newState;
+        }
+
+        static handleWarpTravel(state, distance) {
+            const safetyBonus = state.ship.upgrades.sanctionedNavigator * 5;
+            const currentCorruption = state.ship.corruption;
+            const eventChance = 20 + (currentCorruption / 2) - safetyBonus;
+            const roll = Math.random() * 100;
+
+            if (roll < eventChance) {
+                let severity = 'low';
+                if (currentCorruption > 30) severity = 'med';
+                if (currentCorruption > 70) severity = 'high';
+
+                if (severity === 'low') {
+                    state.ship.morale -= 5;
+                    state.ship.corruption += 2;
+                    this.log(state, "Whispers in the bulkheads. The crew is restless.", 'warp');
+                } else if (severity === 'med') {
+                    const damage = Math.floor(Math.random() * 10) + 5;
+                    state.ship.hull -= damage;
+                    state.ship.corruption += 4;
+                    state.ship.morale -= 10;
+                    this.log(state, `Manifestation on Deck 9. Hull damaged (${damage}).`, 'danger');
+                } else if (severity === 'high') {
+                    const outcome = Math.random();
+                    if (outcome < 0.3) {
+                        const damage = Math.floor(Math.random() * 20) + 15;
+                        state.ship.hull -= damage;
+                        this.log(state, `REALITY TEAR. Massive structural failure (${damage}).`, 'danger');
+                    } else if (outcome < 0.6) {
+                        const commodities = Object.keys(state.ship.cargo);
+                        const target = commodities[Math.floor(Math.random() * commodities.length)];
+                        if (state.ship.cargo[target] > 0) {
+                            const lost = Math.ceil(state.ship.cargo[target] * 0.5);
+                            state.ship.cargo[target] -= lost;
+                            this.log(state, `The ${target} has fused into a fleshy mass. ${lost} units jettisoned.`, 'warp');
+                        } else {
+                            state.ship.morale -= 20;
+                            this.log(state, "The void stares back. Suicide rates spike.", 'danger');
+                        }
+                    } else {
+                        const gain = Math.floor(Math.random() * 500);
+                        state.ship.profitFactor += gain;
+                        state.ship.corruption += 10;
+                        this.log(state, `The Warp grants forbidden knowledge. +${gain} PF. The cost is... steep.`, 'warp');
+                    }
+                }
+            } else {
+                if (Math.random() > 0.9) {
+                    state.ship.corruption = Math.max(0, state.ship.corruption - 1);
+                    this.log(state, "A calm tide in the empyrean soothes the machine spirit.", 'success');
+                }
+            }
+        }
+
+        static cleanse(state) {
+            const newState = structuredClone(state);
+            const cost = Math.floor(CLEANSE_BASE_COST * (1 + (newState.ship.corruption / 50)));
+
+            if (newState.ship.profitFactor >= cost && newState.ship.corruption > 0) {
+                newState.ship.profitFactor -= cost;
+                newState.ship.corruption = Math.max(0, newState.ship.corruption - CLEANSE_AMOUNT);
+                newState.ship.morale = Math.min(100, newState.ship.morale + 5); 
+                
+                const flavor = FLAVOR_TEXTS.cleanse[Math.floor(Math.random() * FLAVOR_TEXTS.cleanse.length)];
+                this.log(newState, flavor, 'success');
+            } else {
+                this.log(newState, "Ritual denied: Insufficient resources or purity.", 'danger');
+            }
+
+            return newState;
+        }
+
+        static log(state, message, type = 'neutral') {
+            state.logs.unshift({
+                id: Date.now() + Math.random(),
+                timestamp: `${state.turn.toString().padStart(3, '0')}.M42`,
+                message,
+                type
+            });
+            if (state.logs.length > 50) state.logs.pop();
+        }
+
+        static buy(state, commodity, quantity) {
+            const newState = structuredClone(state);
+            const planet = newState.map[newState.ship.locationId].planet;
+            const price = planet.market[commodity];
+            const totalCost = price * quantity;
+            
+            const currentCargo = Object.values(newState.ship.cargo).reduce((a, b) => a + b, 0);
+            const maxCapacity = BASE_CARGO_CAPACITY + (newState.ship.upgrades.cargoExpansion * CARGO_CAPACITY_PER_UPGRADE);
+            
+            if (currentCargo + quantity > maxCapacity) {
+                this.log(newState, "Transaction denied: Cargo bays at maximum capacity.", 'danger');
+                return newState;
+            }
+
+            if (newState.ship.profitFactor >= totalCost && planet.inventory[commodity] >= quantity) {
+                newState.ship.profitFactor -= totalCost;
+                newState.ship.cargo[commodity] += quantity;
+                planet.inventory[commodity] -= quantity;
+                
+                const flavor = FLAVOR_TEXTS.buy[Math.floor(Math.random() * FLAVOR_TEXTS.buy.length)];
+                this.log(newState, `${flavor} (${quantity} ${commodity}, -${totalCost} PF)`, 'success');
+            } else {
+                const flavor = FLAVOR_TEXTS.fail[Math.floor(Math.random() * FLAVOR_TEXTS.fail.length)];
+                this.log(newState, `${flavor} (Insufficient funds/stock)`, 'danger');
+            }
+            return newState;
+        }
+
+        static sell(state, commodity, quantity) {
+            const newState = structuredClone(state);
+            const planet = newState.map[newState.ship.locationId].planet;
+            const corruptionBonus = 1 + (newState.ship.corruption / 200); 
+            const price = Math.floor(EconomyManager.getSellPrice(planet, commodity) * corruptionBonus);
+            const totalValue = price * quantity;
+
+            if (newState.ship.cargo[commodity] >= quantity) {
+                newState.ship.cargo[commodity] -= quantity;
+                newState.ship.profitFactor += totalValue;
+                planet.inventory[commodity] += quantity;
+                
+                const flavor = FLAVOR_TEXTS.sell[Math.floor(Math.random() * FLAVOR_TEXTS.sell.length)];
+                this.log(newState, `${flavor} (${quantity} ${commodity}, +${totalValue} PF)`, 'success');
+                
+                if (commodity === Commodity.RELICS || commodity === Commodity.ARTIFACTS) {
+                    if (Math.random() > 0.7) {
+                        newState.ship.corruption += 2;
+                        this.log(newState, "The trade carries a lingering taint.", 'warp');
+                    }
+                }
+            } else {
+                this.log(newState, "Transaction denied: Insufficient cargo.", 'danger');
+            }
+            return newState;
+        }
+      }
+
+      // --- COMPONENTS ---
+
+      const Bridge = ({ ship }) => {
+        const getStatusColor = (current, max) => {
+            const pct = current / max;
+            if (pct < 0.25) return 'text-red-600 animate-pulse';
+            if (pct < 0.5) return 'text-yellow-600';
+            return 'text-green-500';
+        };
+
+        return (
+            <div className="w-full bg-stone-950 border-b border-stone-800 p-4 grid grid-cols-2 md:grid-cols-5 gap-4 font-mono text-sm z-10 relative">
+            <div className="absolute top-0 left-0 w-full h-full bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDUwNTA1Ii8+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMxMTEiLz4KPC9zdmc+')] opacity-20 pointer-events-none"></div>
+
+            {/* HULL */}
+            <div className="flex flex-col tech-border p-2">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-amber-800 uppercase text-[10px] tracking-widest font-bold">Hull Integrity</span>
+                    <span className="text-[10px] text-stone-600">STRC</span>
+                </div>
+                <div className="flex items-end justify-between mb-1">
+                    <span className={`text-xl font-bold ${getStatusColor(ship.hull, ship.maxHull)}`}>
+                    {ship.hull}
+                    </span>
+                    <span className="text-xs text-stone-600">/{ship.maxHull}</span>
+                </div>
+                <div className="w-full bg-stone-900 h-1.5 flex gap-0.5">
+                    {Array.from({length: 10}).map((_, i) => (
+                        <div 
+                            key={i} 
+                            className={`flex-1 ${i < (ship.hull/ship.maxHull)*10 ? 'bg-amber-600' : 'bg-stone-800'}`}
+                        ></div>
+                    ))}
+                </div>
+            </div>
+
+            {/* FUEL */}
+            <div className="flex flex-col tech-border p-2">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-amber-800 uppercase text-[10px] tracking-widest font-bold">Promethium</span>
+                    <span className="text-[10px] text-stone-600">FUEL</span>
+                </div>
+                <div className="flex items-end justify-between">
+                    <span className={`text-xl font-bold ${getStatusColor(ship.fuel, ship.maxFuel)}`}>
+                    {ship.fuel}
+                    </span>
+                    <span className="text-xs text-stone-600">LITRES</span>
+                </div>
+                <div className="w-full h-0.5 bg-stone-800 mt-2 relative">
+                    <div className="absolute top-0 left-0 h-full bg-amber-600" style={{width: `${(ship.fuel/ship.maxFuel)*100}%`}}></div>
+                </div>
+            </div>
+
+            {/* MORALE */}
+            <div className="flex flex-col tech-border p-2">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-amber-800 uppercase text-[10px] tracking-widest font-bold">Morale</span>
+                    <span className="text-[10px] text-stone-600">OBDT</span>
+                </div>
+                <div className="flex items-center justify-between h-full">
+                    <span className={`text-xl font-bold ${ship.morale < 30 ? 'text-red-500' : 'text-amber-500'}`}>
+                    {ship.morale}%
+                    </span>
+                    <div className={`w-3 h-3 rounded-full ${ship.morale > 50 ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-red-500 animate-pulse'}`}></div>
+                </div>
+            </div>
+
+            {/* CORRUPTION */}
+            <div className="flex flex-col tech-border p-2 relative overflow-hidden">
+                {ship.corruption > 50 && <div className="absolute inset-0 bg-purple-900/10 animate-pulse pointer-events-none"></div>}
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-purple-900 uppercase text-[10px] tracking-widest font-bold">Corruption</span>
+                    <span className="text-[10px] text-stone-600">WARP</span>
+                </div>
+                <div className="flex items-end justify-between">
+                    <span className={`text-xl font-bold ${ship.corruption > 50 ? 'text-purple-400 text-glow' : 'text-stone-400'}`}>
+                    {ship.corruption}%
+                    </span>
+                </div>
+                <div className="w-full bg-stone-900 h-1 mt-2">
+                    <div className="bg-purple-700 h-full transition-all" style={{ width: `${Math.min(ship.corruption, 100)}%`}}></div>
+                </div>
+            </div>
+
+            {/* PROFIT FACTOR */}
+            <div className="flex flex-col tech-border p-2 border-amber-500/30">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-yellow-700 uppercase text-[10px] tracking-widest font-bold">Profit Factor</span>
+                    <span className="text-[10px] text-stone-600">GELD</span>
+                </div>
+                <div className="flex items-end justify-between mt-1">
+                    <span className="text-xl font-bold text-yellow-400 text-glow tracking-tighter">
+                    {ship.profitFactor.toLocaleString()}
+                    </span>
+                </div>
+            </div>
+            </div>
+        );
+      };
+
+      const StarMap = ({ state, onTravel }) => {
+        const currentNode = state.map[state.ship.locationId];
+        const SCALE = 5; 
+        
+        return (
+            <div className="w-full h-full bg-black relative overflow-hidden flex flex-col">
+                <div className="absolute top-4 left-4 text-amber-500 text-xs font-bold z-10 bg-black/80 px-3 py-2 border border-amber-900/50 shadow-lg backdrop-blur-md">
+                    SECTOR SCAN: {currentNode.planet.name.toUpperCase()}
+                </div>
+                
+            <svg 
+                viewBox={`0 0 ${MAP_SIZE * SCALE} ${MAP_SIZE * SCALE}`} 
+                className="w-full h-full max-h-[500px] bg-stone-950"
+                preserveAspectRatio="xMidYMid meet"
+            >
+                <defs>
+                    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#1c1917" strokeWidth="0.5"/>
+                    </pattern>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+
+                <rect width="100%" height="100%" fill="url(#grid)" />
+
+                {/* Connections */}
+                {Object.values(state.map).map((node) => 
+                node.connections.map(targetId => {
+                    const target = state.map[targetId];
+                    const isVisible = node.visited || target.visited || 
+                                    state.map[state.ship.locationId].connections.includes(node.planet.id) ||
+                                    state.map[state.ship.locationId].connections.includes(target.planet.id);
+                    
+                    if (!isVisible) return null;
+                    const isCharted = node.visited && target.visited;
+
+                    return (
+                    <line
+                        key={`${node.planet.id}-${target.planet.id}`}
+                        x1={node.planet.coordinates.x * SCALE}
+                        y1={node.planet.coordinates.y * SCALE}
+                        x2={target.planet.coordinates.x * SCALE}
+                        y2={target.planet.coordinates.y * SCALE}
+                        stroke={isCharted ? "#d97706" : "#44403c"}
+                        strokeWidth={isCharted ? "1.5" : "1"}
+                        strokeDasharray={isCharted ? "none" : "4 4"}
+                        opacity={isCharted ? "0.8" : "0.5"}
+                    />
+                    );
+                })
+                )}
+
+                {/* Nodes */}
+                {Object.values(state.map).map((node) => {
+                    const isCurrent = node.planet.id === state.ship.locationId;
+                    const isConnected = currentNode.connections.includes(node.planet.id);
+                    const isVisited = node.visited;
+                    const isVisible = isCurrent || isVisited || isConnected;
+
+                    if (!isVisible) return null;
+
+                    const isTravelable = isConnected && !isCurrent;
+
+                    return (
+                        <g 
+                            key={node.planet.id} 
+                            onClick={() => isTravelable ? onTravel(node.planet.id) : null}
+                            className={isTravelable ? 'cursor-pointer hover:brightness-125 transition-all duration-200' : ''}
+                        >
+                            <circle cx={node.planet.coordinates.x * SCALE} cy={node.planet.coordinates.y * SCALE} r={15} fill="transparent" />
+
+                            {isCurrent && (
+                                <circle
+                                    cx={node.planet.coordinates.x * SCALE}
+                                    cy={node.planet.coordinates.y * SCALE}
+                                    r={25}
+                                    fill="none"
+                                    stroke="#00ff41"
+                                    strokeWidth="0.5"
+                                    opacity="0.3"
+                                    className="animate-pulse"
+                                />
+                            )}
+
+                            {isTravelable && (
+                                <circle 
+                                    cx={node.planet.coordinates.x * SCALE}
+                                    cy={node.planet.coordinates.y * SCALE}
+                                    r={9}
+                                    fill="none"
+                                    stroke="#fbbf24" 
+                                    strokeWidth="1"
+                                    strokeDasharray="3 3"
+                                    className="animate-spin opacity-70 origin-center"
+                                    style={{ 
+                                        animationDuration: '8s', 
+                                        transformBox: 'fill-box', 
+                                        transformOrigin: 'center' 
+                                    }}
+                                />
+                            )}
+
+                            <circle
+                                cx={node.planet.coordinates.x * SCALE}
+                                cy={node.planet.coordinates.y * SCALE}
+                                r={isCurrent ? 7 : 5}
+                                fill={isCurrent ? '#00ff41' : (isVisited ? '#f59e0b' : '#1c1917')} 
+                                stroke={isCurrent ? '#003300' : (isVisited ? '#78350f' : '#57534e')}
+                                strokeWidth={isTravelable ? "2" : "1"}
+                                filter={isCurrent ? "url(#glow)" : ""}
+                                className="transition-all duration-300"
+                            />
+                            
+                            <text
+                                x={node.planet.coordinates.x * SCALE}
+                                y={(node.planet.coordinates.y * SCALE) + 16}
+                                textAnchor="middle"
+                                fill={isCurrent ? '#4ade80' : (isVisited ? '#fbbf24' : '#a8a29e')}
+                                fontSize="10"
+                                fontWeight="bold"
+                                className="font-mono uppercase tracking-wider select-none pointer-events-none"
+                                style={{ 
+                                    textShadow: '0 2px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,1)' 
+                                }}
+                            >
+                                {node.planet.name.split(' ')[0]}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
+
+            {/* Legend & Stats */}
+            <div className="absolute bottom-2 right-2 text-[10px] text-amber-900 font-mono text-right bg-black/90 p-3 border border-amber-900/30 backdrop-blur-md rounded-tl-lg">
+                <div className="flex items-center justify-end gap-2 mb-1">
+                    <span className="text-stone-400 font-bold">UNKNOWN</span>
+                    <div className="w-2 h-2 rounded-full bg-[#1c1917] border border-stone-600"></div>
+                </div>
+                <div className="flex items-center justify-end gap-2 mb-1">
+                    <span className="text-amber-500 font-bold">VISITED</span>
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                </div>
+                <div className="flex items-center justify-end gap-2 mb-2">
+                    <span className="text-green-500 font-bold">CURRENT</span>
+                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_5px_#22c55e]"></div>
+                </div>
+                <div className="h-px bg-amber-900/30 w-full mb-2"></div>
+                <p className="text-stone-500">TRAVEL_COST: <span className="text-amber-600">1 FUEL/LY</span></p>
+                <p className="text-stone-500">SUPPLY_DRAIN: <span className="text-amber-600">0.5 /LY</span></p>
+            </div>
+            </div>
+        );
+      };
+
+      const VoxArray = ({ logs }) => {
+        const bottomRef = useRef(null);
+
+        useEffect(() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, [logs]);
+
+        const getColor = (type) => {
+            switch (type) {
+            case 'danger': return 'text-red-500 text-glow';
+            case 'success': return 'text-green-500 text-glow';
+            case 'warp': return 'text-purple-400 text-glow';
+            default: return 'text-amber-500';
+            }
+        };
+
+        return (
+            <div className="h-48 md:h-64 border-t border-stone-800 bg-black p-4 font-mono text-sm overflow-hidden flex flex-col relative z-20">
+            <div className="absolute top-0 right-0 p-2 opacity-30 pointer-events-none">
+                <span className="text-[100px] leading-none text-amber-900 font-bold">VOX</span>
+            </div>
+
+            <div className="flex items-center justify-between mb-2 border-b border-dashed border-stone-800 pb-2 z-10">
+                <span className="text-stone-500 font-bold tracking-widest text-xs flex items-center gap-2">
+                    <span className="w-2 h-2 bg-amber-900 animate-pulse"></span>
+                    VOX-CASTER LOG // INCOMING STREAM
+                </span>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar z-10 pr-2">
+                {logs.slice().reverse().map((log) => (
+                <div key={log.id} className="flex gap-3 text-xs md:text-sm font-mono leading-tight hover:bg-white/5 p-0.5 transition-colors">
+                    <span className="text-stone-600 shrink-0 font-bold opacity-70">[{log.timestamp}]</span>
+                    <span className={`${getColor(log.type)}`}>
+                    <span className="mr-2 opacity-50">{'>'}</span>
+                    {log.message}
+                    </span>
+                </div>
+                ))}
+                <div className="h-4 w-2 bg-amber-500 animate-blink mt-1 inline-block"></div>
+                <div ref={bottomRef} />
+            </div>
+            </div>
+        );
+      };
+
+      const TacticalCogitator = ({ state, onTravel, onBuy, onSell, onCleanse }) => {
+        const [activeTab, setActiveTab] = useState('MAP');
+        const currentPlanet = state.map[state.ship.locationId].planet;
+        const totalCargo = Object.values(state.ship.cargo).reduce((a, b) => a + b, 0);
+        const maxCapacity = BASE_CARGO_CAPACITY + (state.ship.upgrades.cargoExpansion * CARGO_CAPACITY_PER_UPGRADE);
+        
+        const cleanseCost = Math.floor(CLEANSE_BASE_COST * (1 + (state.ship.corruption / 50)));
+
+        const getTabStyle = (tab) => `
+            flex items-center justify-between p-4 cursor-pointer transition-all duration-200 border-l-2
+            ${activeTab === tab 
+            ? 'bg-amber-900/20 border-amber-500 text-amber-400 shadow-[inset_0_0_10px_rgba(245,158,11,0.1)]' 
+            : 'border-transparent text-stone-600 hover:bg-amber-900/10 hover:text-amber-700'}
+        `;
+
+        return (
+            <div className="flex-1 bg-stone-950 p-4 flex flex-col md:flex-row gap-4 overflow-hidden relative">
+            <div className="absolute inset-0 bg-grid opacity-30 pointer-events-none"></div>
+
+            <div className="w-full md:w-64 flex flex-col gap-3 z-10 shrink-0">
+                <div className="text-[10px] text-stone-600 uppercase tracking-widest mb-1 border-b border-stone-800 pb-1">
+                    // INTERFACE_MAIN
+                </div>
+                
+                <button onClick={() => setActiveTab('MAP')} className={getTabStyle('MAP')}>
+                    <span className="font-bold tracking-wider">[1] NAVIS MAP</span>
+                    <div className={`w-2 h-2 rounded-sm ${activeTab === 'MAP' ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-stone-800'}`}></div>
+                </button>
+                
+                <button onClick={() => setActiveTab('TRADE')} className={getTabStyle('TRADE')}>
+                    <span className="font-bold tracking-wider">[2] MERCANTILE</span>
+                    <div className={`w-2 h-2 rounded-sm ${activeTab === 'TRADE' ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-stone-800'}`}></div>
+                </button>
+                
+                <button onClick={() => setActiveTab('CARGO')} className={getTabStyle('CARGO')}>
+                    <span className="font-bold tracking-wider">[3] MANIFEST</span>
+                    <div className={`w-2 h-2 rounded-sm ${activeTab === 'CARGO' ? 'bg-amber-500 shadow-[0_0_5px_rgba(245,158,11,0.8)]' : 'bg-stone-800'}`}></div>
+                </button>
+                
+                <div className="mt-auto flex flex-col gap-2">
+                    <button
+                        disabled={state.ship.profitFactor < cleanseCost || state.ship.corruption === 0}
+                        onClick={onCleanse}
+                        className="group border border-purple-900/50 hover:border-purple-500 bg-purple-900/10 p-2 text-left disabled:opacity-30 disabled:border-stone-800 transition-all"
+                    >
+                        <div className="text-[10px] text-purple-400 uppercase tracking-widest mb-1 group-hover:text-purple-300">
+                            RITUAL: SANCTIFY SHIP
+                        </div>
+                        <div className="flex justify-between items-end">
+                            <span className="text-stone-400 text-xs">-10 WARP</span>
+                            <span className="text-yellow-600 text-xs font-bold">{cleanseCost} PF</span>
+                        </div>
+                    </button>
+
+                    <div className="tech-border p-4 bg-black/60">
+                        <div className="tech-panel-header px-2 py-1 mb-2">
+                            <h3 className="text-amber-700 text-[10px] font-bold tracking-widest">LOCAL SYSTEM SCAN</h3>
+                        </div>
+                        <p className="text-lg text-amber-500 mb-1 font-bold">{currentPlanet.name}</p>
+                        <p className="text-xs text-stone-400 mb-4 uppercase">{currentPlanet.type}</p>
+                        <p className="text-xs text-stone-500 italic border-l-2 border-stone-800 pl-2 leading-tight">
+                            "{currentPlanet.description}"
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex-1 tech-border bg-black/40 relative flex flex-col min-w-0 z-10">
+                <div className="h-6 bg-stone-900/50 border-b border-amber-900/20 flex items-center justify-between px-3">
+                    <span className="text-[10px] text-amber-900">TERMINAL_ID: 492-B // AUTH_USER: ROGUE_TRADER</span>
+                    <div className="flex gap-1">
+                        <div className="w-1 h-1 bg-amber-900 rounded-full"></div>
+                        <div className="w-1 h-1 bg-amber-900 rounded-full"></div>
+                        <div className="w-1 h-1 bg-amber-900 rounded-full"></div>
+                    </div>
+                </div>
+
+                <div className="flex-1 relative overflow-hidden">
+                    {activeTab === 'MAP' && (
+                        <StarMap state={state} onTravel={onTravel} />
+                    )}
+
+                    {activeTab === 'TRADE' && (
+                        <div className="p-4 h-full overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-1 gap-2">
+                                <div className="flex justify-between text-[10px] text-stone-500 border-b border-stone-800 pb-2 mb-2 font-bold tracking-wider px-2">
+                                    <span className="w-1/3">COMMODITY</span>
+                                    <span className="w-1/6 text-right">MKT PRICE</span>
+                                    <span className="w-1/6 text-right">STOCK</span>
+                                    <span className="w-1/6 text-right">HOLD</span>
+                                    <span className="w-1/6 text-right">ACTION</span>
+                                </div>
+
+                                {COMMODITY_LIST.map((comm, idx) => {
+                                    const price = currentPlanet.market[comm];
+                                    const stock = currentPlanet.inventory[comm];
+                                    const owned = state.ship.cargo[comm];
+                                    const isEven = idx % 2 === 0;
+
+                                    return (
+                                        <div key={comm} className={`flex items-center justify-between text-sm py-3 px-2 border-l-2 border-transparent hover:border-amber-500 transition-colors ${isEven ? 'bg-stone-900/20' : ''}`}>
+                                            <span className="w-1/3 text-amber-600 font-bold">{comm}</span>
+                                            <div className="w-1/6 text-right flex flex-col">
+                                                <span className="text-stone-300">{price}</span>
+                                            </div>
+                                            <span className="w-1/6 text-right text-stone-500">{stock}</span>
+                                            <span className="w-1/6 text-right text-amber-400 font-bold">{owned}</span>
+                                            <div className="w-1/6 flex justify-end gap-1">
+                                                <button 
+                                                    disabled={stock <= 0 || state.ship.profitFactor < price}
+                                                    onClick={() => onBuy(comm, 1)}
+                                                    className="w-6 h-6 flex items-center justify-center bg-stone-800 text-green-500 border border-stone-700 hover:border-green-500 hover:text-green-400 hover:shadow-[0_0_5px_rgba(34,197,94,0.3)] disabled:opacity-20 disabled:border-stone-800 disabled:shadow-none transition-all"
+                                                >
+                                                    +
+                                                </button>
+                                                <button 
+                                                    disabled={owned <= 0}
+                                                    onClick={() => onSell(comm, 1)}
+                                                    className="w-6 h-6 flex items-center justify-center bg-stone-800 text-red-500 border border-stone-700 hover:border-red-500 hover:text-red-400 hover:shadow-[0_0_5px_rgba(239,68,68,0.3)] disabled:opacity-20 disabled:border-stone-800 disabled:shadow-none transition-all"
+                                                >
+                                                    -
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'CARGO' && (
+                        <div className="p-6 h-full overflow-y-auto font-mono custom-scrollbar">
+                            <div className="flex justify-between items-end border-b border-amber-900/50 pb-2 mb-6">
+                                <h2 className="text-amber-500 text-lg tracking-widest">CARGO MANIFEST</h2>
+                                <span className="text-xs text-stone-500">CAPACITY_LIMIT_ENFORCED</span>
+                            </div>
+                            
+                            <div className="mb-8 p-4 border border-dashed border-stone-700 bg-stone-900/30">
+                                <div className="flex justify-between text-xs text-amber-700 mb-2 font-bold tracking-wider">
+                                    <span>STORAGE UTILIZATION</span>
+                                    <span className={totalCargo >= maxCapacity ? 'text-red-500 animate-pulse' : 'text-amber-500'}>
+                                        {totalCargo} / {maxCapacity} UNITS
+                                    </span>
+                                </div>
+                                <div className="w-full h-4 bg-black border border-stone-600 p-0.5 flex gap-0.5">
+                                    {Array.from({length: 20}).map((_, i) => {
+                                        const fillPct = (totalCargo / maxCapacity) * 20;
+                                        return (
+                                            <div 
+                                                key={i}
+                                                className={`flex-1 ${i < fillPct ? (totalCargo >= maxCapacity ? 'bg-red-700' : 'bg-amber-600') : 'bg-stone-900'}`}
+                                            ></div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {COMMODITY_LIST.map(comm => {
+                                    const qty = state.ship.cargo[comm];
+                                    return (
+                                        <div key={comm} className={`border p-4 flex justify-between items-center transition-all relative overflow-hidden group ${qty > 0 ? 'border-amber-900/40 bg-amber-900/05' : 'border-stone-800 opacity-50'}`}>
+                                            {qty > 0 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-600"></div>}
+                                            <div className="flex flex-col z-10">
+                                                <span className="text-amber-600 text-sm tracking-wider uppercase font-bold group-hover:text-amber-400">{comm}</span>
+                                                {qty > 0 && <span className="text-[10px] text-stone-500">STASIS_FIELD_ACTIVE</span>}
+                                            </div>
+                                            <span className={`text-2xl font-bold z-10 ${qty > 0 ? 'text-amber-400' : 'text-stone-700'}`}>
+                                                {qty}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+            </div>
+        );
+      };
+
+      // --- APP ---
+
+      const INITIAL_UPGRADES = {
+        reinforcedProw: 0,
+        sanctionedNavigator: 0,
+        tradeMandate: 0,
+        cargoExpansion: 0
+      };
+
+      const App = () => {
+        const [gameState, setGameState] = useState(null);
+        
+        useEffect(() => {
+            const saved = localStorage.getItem('warrantOfDecay_save');
+            if (saved) {
+            try {
+                setGameState(JSON.parse(saved));
+            } catch (e) {
+                console.error("Save file corrupted, purging archives.", e);
+                startNewRun(0, INITIAL_UPGRADES);
+            }
+            } else {
+            startNewRun(0, INITIAL_UPGRADES);
+            }
+        }, []);
+
+        useEffect(() => {
+            if (gameState) {
+            localStorage.setItem('warrantOfDecay_save', JSON.stringify(gameState));
+            }
+        }, [gameState]);
+
+        const startNewRun = (legacyPoints, upgrades) => {
+            const newState = GameEngine.createNewGame(legacyPoints, upgrades);
+            setGameState(newState);
+        };
+
+        const handleTravel = useCallback((targetId) => {
+            if (!gameState || gameState.isGameOver) return;
+            const newState = GameEngine.travelTo(gameState, targetId);
+            setGameState(newState);
+        }, [gameState]);
+
+        const handleBuy = useCallback((commodity, qty) => {
+            if (!gameState || gameState.isGameOver) return;
+            const newState = GameEngine.buy(gameState, commodity, qty);
+            setGameState(newState);
+        }, [gameState]);
+
+        const handleSell = useCallback((commodity, qty) => {
+            if (!gameState || gameState.isGameOver) return;
+            const newState = GameEngine.sell(gameState, commodity, qty);
+            setGameState(newState);
+        }, [gameState]);
+
+        const handleCleanse = useCallback(() => {
+            if (!gameState || gameState.isGameOver) return;
+            const newState = GameEngine.cleanse(gameState);
+            setGameState(newState);
+        }, [gameState]);
+
+        const handleRebirth = (upgradeKey) => {
+            if (!gameState) return;
+            
+            const cost = 1000 * ((gameState.ship.upgrades[upgradeKey] || 0) + 1);
+            
+            if (gameState.legacyPoints >= cost) {
+            const newUpgrades = { ...gameState.ship.upgrades };
+            newUpgrades[upgradeKey]++;
+            
+            startNewRun(gameState.legacyPoints - cost, newUpgrades);
+            }
+        };
+
+        if (!gameState) return <div className="text-amber-500 font-mono p-10">Initializing Cogitators...</div>;
+
+        const corruptionLevel = gameState.ship.corruption;
+        const getCorruptionStyle = () => {
+            if (corruptionLevel < 30) return {};
+            if (corruptionLevel < 60) return { filter: 'sepia(0.2) hue-rotate(-10deg)' };
+            if (corruptionLevel < 90) return { filter: 'sepia(0.4) hue-rotate(-30deg) blur(0.5px)' };
+            return { filter: 'sepia(0.8) hue-rotate(-50deg) blur(1px) contrast(1.2)', animation: 'pulse 2s infinite' };
+        };
+
+        if (gameState.isGameOver) {
+            return (
+            <div className="w-full h-screen bg-black flex flex-col items-center justify-center text-amber-500 font-mono p-4 crt bg-grid">
+                <h1 className="text-4xl text-red-600 mb-4 border-b-2 border-red-900 pb-2 tracking-widest uppercase">Critical Failure</h1>
+                <p className="text-xl mb-8 text-stone-400">The dynasty has fallen. The Warrant returns to the vaults.</p>
+                
+                <div className="bg-stone-950 p-8 border border-amber-900 rounded max-w-2xl w-full tech-border">
+                <div className="flex justify-between mb-8 border-b border-amber-900/30 pb-4">
+                    <span className="text-stone-400">LEGACY POINTS AVAILABLE:</span>
+                    <span className="font-bold text-green-500 text-2xl text-glow">{gameState.legacyPoints}</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button 
+                    onClick={() => handleRebirth('reinforcedProw')}
+                    className="group flex flex-col p-4 border border-stone-800 hover:border-amber-600 hover:bg-amber-900/10 transition-all text-left"
+                    >
+                    <span className="text-amber-500 font-bold mb-1 group-hover:text-amber-400">REINFORCED PROW</span>
+                    <span className="text-xs text-stone-500 mb-2">Current Lvl: {gameState.ship.upgrades.reinforcedProw}</span>
+                    <span className="text-xs text-amber-700">Cost: {1000 * (gameState.ship.upgrades.reinforcedProw + 1)}</span>
+                    </button>
+                    <button 
+                    onClick={() => handleRebirth('sanctionedNavigator')}
+                    className="group flex flex-col p-4 border border-stone-800 hover:border-amber-600 hover:bg-amber-900/10 transition-all text-left"
+                    >
+                    <span className="text-amber-500 font-bold mb-1 group-hover:text-amber-400">SANCTIONED NAVIGATOR</span>
+                    <span className="text-xs text-stone-500 mb-2">Current Lvl: {gameState.ship.upgrades.sanctionedNavigator}</span>
+                    <span className="text-xs text-amber-700">Cost: {1000 * (gameState.ship.upgrades.sanctionedNavigator + 1)}</span>
+                    </button>
+                    <button 
+                    onClick={() => handleRebirth('tradeMandate')}
+                    className="group flex flex-col p-4 border border-stone-800 hover:border-amber-600 hover:bg-amber-900/10 transition-all text-left"
+                    >
+                    <span className="text-amber-500 font-bold mb-1 group-hover:text-amber-400">TRADE MANDATE</span>
+                    <span className="text-xs text-stone-500 mb-2">Current Lvl: {gameState.ship.upgrades.tradeMandate}</span>
+                    <span className="text-xs text-amber-700">Cost: {1000 * (gameState.ship.upgrades.tradeMandate + 1)}</span>
+                    </button>
+                    <button 
+                    onClick={() => handleRebirth('cargoExpansion')}
+                    className="group flex flex-col p-4 border border-stone-800 hover:border-amber-600 hover:bg-amber-900/10 transition-all text-left"
+                    >
+                    <span className="text-amber-500 font-bold mb-1 group-hover:text-amber-400">CARGO EXPANSION</span>
+                    <span className="text-xs text-stone-500 mb-2">Current Lvl: {gameState.ship.upgrades.cargoExpansion}</span>
+                    <span className="text-xs text-amber-700">Cost: {1000 * (gameState.ship.upgrades.cargoExpansion + 1)}</span>
+                    </button>
+                </div>
+
+                <button 
+                    onClick={() => startNewRun(gameState.legacyPoints, gameState.ship.upgrades)}
+                    className="w-full mt-8 bg-amber-900/20 hover:bg-amber-800 hover:text-white text-amber-500 p-4 font-bold border border-amber-600 uppercase tracking-widest transition-all"
+                >
+                    Initiate Next Heir
+                </button>
+                </div>
+            </div>
+            );
+        }
+
+        return (
+            <div className="w-full h-screen bg-black crt flex items-center justify-center p-2 md:p-8 bg-grid transition-all duration-1000" style={getCorruptionStyle()}>
+                <div className="flex flex-col w-full h-full max-w-7xl mx-auto border border-stone-800 bg-stone-950 shadow-2xl overflow-hidden relative">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-900/50 via-amber-500/50 to-amber-900/50 opacity-20 z-20"></div>
+                    
+                    <Bridge ship={gameState.ship} />
+                    <TacticalCogitator 
+                        state={gameState} 
+                        onTravel={handleTravel} 
+                        onBuy={handleBuy} 
+                        onSell={handleSell}
+                        onCleanse={handleCleanse}
+                    />
+                    <VoxArray logs={gameState.logs} />
+                </div>
+            </div>
+        );
+      };
+
+      // --- MOUNT ---
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
